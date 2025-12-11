@@ -1,0 +1,27 @@
+{
+  "name": "gpt-realtime-backend",
+  "version": "1.0.0",
+  "description": "Secure backend for Azure OpenAI Realtime API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [
+    "azure",
+    "openai",
+    "realtime",
+    "api"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "type": "commonjs"
+}

@@ -1,0 +1,19 @@
+# 依存関係
+node_modules/
+package-lock.json
+
+# 環境変数（機密情報）
+.env
+
+# ログファイル
+*.log
+npm-debug.log*
+
+# OS関連
+.DS_Store
+Thumbs.db
+
+# IDE関連
+.idea/
+*.swp
+*.swo

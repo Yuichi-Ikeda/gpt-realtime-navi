@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 音声ナビゲーション</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    
+    <!-- Leaflet JavaScript -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="styles/common.css">
+    <link rel="stylesheet" href="styles/ai-navi.css">
+</head>
+<body>
+    <div class="header-container">
+        <h1>音声ナビゲーション</h1>
+        <button id="startSessionButton" onclick="StartSession()">AI オペレーターとの通話</button>
+    </div>
+    
+    <div id="myMap"></div>
+
+    <!-- Log container for API messages -->
+    <div id="logContainer"></div>
+
+    <script>
+        // OpenStreetMap (Leaflet) の初期化
+        let map;
+        
+        // ページ読み込み時にマップを初期化
+        window.onload = function() {
+            // セッショントークンの確認
+            const sessionToken = localStorage.getItem('sessionToken');
+            if (!sessionToken) {
+                // ログインしていない場合はログイン画面にリダイレクト
+                window.location.href = 'index.html';
+                return;
+            }
+            
+            initializeMap();
+        };
+        
+        function initializeMap() {
+            // Leaflet マップの初期化
+            map = L.map('myMap').setView([35.681236, 139.767125], 15); // 東京駅
+            
+            // OpenStreetMap タイルレイヤーを追加
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                maxZoom: 19
+            }).addTo(map);
+            
+            // マーカーを追加（オプション）
+            L.marker([35.681236, 139.767125]).addTo(map)
+                .bindPopup('現在地')
+                .openPopup();
+        }
+
+        // バックエンドAPIのエンドポイント
+        // サーバーと同じホスト:ポートを自動的に使用
+        const BACKEND_API_URL = window.location.origin;
+        
+        // WebRTC URLとセッションIDは、バックエンドから取得します
+        let WEBRTC_URL = "";
+        let sessionData = null;
+
+        async function StartSession() {
+            try {
+                // ボタンをdisableにして二重押しを防止
+                const startButton = document.getElementById('startSessionButton');
+                if (startButton) {
+                    startButton.disabled = true;
+                }
+                
+                // セッショントークンを取得
+                const sessionToken = localStorage.getItem('sessionToken');
+                if (!sessionToken) {
+                    alert('セッションが無効です。再度ログインしてください。');
+                    window.location.href = 'index.html';
+                    return;
+                }
+                
+                // バックエンドAPIから一時トークン（エフェメラルキー）を取得
+                const response = await fetch(`${BACKEND_API_URL}/api/get-token`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-Session-Token": sessionToken
+                    }
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    
+                    // 認証エラーの場合はログイン画面にリダイレクト
+                    if (response.status === 401) {
+                        alert('セッションが期限切れです。再度ログインしてください。');
+                        localStorage.removeItem('sessionToken');
+                        window.location.href = 'index.html';
+                        return;
+                    }
+                    
+                    throw new Error(`API request failed: ${errorData.error || 'Unknown error'}`);
+                }
+
+                const data = await response.json();
+
+                const sessionId = data.sessionId;
+                const ephemeralKey = data.ephemeralKey;
+                WEBRTC_URL = data.webrtcUrl;
+                sessionData = data;
+                
+                console.log("Session started:", sessionId);
+
+                // Mask the ephemeral key in the log message.
+                logMessage("Ephemeral Key Received: " + "***");
+		        logMessage("WebRTC Session Id = " + sessionId );
+
+                // Set up the WebRTC connection using the ephemeral key.
+                init(ephemeralKey); 
+
+            } catch (error) {
+                console.error("Error fetching ephemeral key:", error);
+                logMessage("Error fetching ephemeral key: " + error.message);
+            }
+        }
+
+        async function init(ephemeralKey) {
+
+            let peerConnection = new RTCPeerConnection();
+
+            // Set up to play remote audio from the model.
+            const audioElement = document.createElement('audio');
+            audioElement.autoplay = true;
+            document.body.appendChild(audioElement);
+
+            peerConnection.ontrack = (event) => {
+                audioElement.srcObject = event.streams[0];
+            };
+
+            // Set up data channel for sending and receiving events
+            const clientMedia = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const audioTrack = clientMedia.getAudioTracks()[0];
+            peerConnection.addTrack(audioTrack);
+
+            let dataChannel = peerConnection.createDataChannel('realtime-channel');
+
+            dataChannel.addEventListener('open', () => {
+                logMessage('Data channel is open');
+                updateSession(dataChannel);
+                
+                // セッション開始後、AIに最初の発話を促す
+                setTimeout(() => {
+                    const responseCreateEvent = {
+                        type: "response.create"
+                    };
+                    dataChannel.send(JSON.stringify(responseCreateEvent));
+                    logMessage("Sent initial response.create to trigger AI greeting");
+                }, 10); // セッション更新後に少し待ってから送信
+            });
+
+            dataChannel.addEventListener('message', (event) => {
+                let realtimeEvent;
+                try {
+                    realtimeEvent = JSON.parse(event.data);
+                } catch {
+                    return; // Ignore non-JSON messages
+                }
+
+                if (realtimeEvent.type === "conversation.item.input_audio_transcription.completed") {
+                    const text = (realtimeEvent.transcript || "").trim();
+                    if (text) logMessage("Sent client event: " + text, "user");
+                }
+
+                // フィルタ: response.audio_transcript.done のイベントだけを表示
+                if (realtimeEvent.type === "response.audio_transcript.done") {
+                    const text = (realtimeEvent.transcript || "").trim();
+                    logMessage("Received server event: " + text, "assistant");
+                }
+
+                // ==== Function / Tool Call ログ ====
+                // さまざまなイベント名に対応できるよう広めにパターン検知
+                // 蓄積用バッファ (初期化一度だけ)
+                if (!window.__funcCallBuffers) {
+                    window.__funcCallBuffers = {}; // key: item_id or response_id => {name, argsText}
+                }
+                const buffers = window.__funcCallBuffers;
+
+                const t = realtimeEvent.type;
+                // 開始 (output_item.added で tool_call が追加されたケース)
+                if (t === 'response.output_item.added' && realtimeEvent.item && realtimeEvent.item.type === 'tool_call') {
+                    const id = realtimeEvent.item.id || realtimeEvent.item.item_id || realtimeEvent.item.tool_call_id;
+                    const name = realtimeEvent.item.name || realtimeEvent.item.function_name || 'unknown_function';
+                    buffers[id] = { name, argsText: '' };
+                    logMessage(`Function Call Requested: ${name}(`);
+                }
+                // arguments の delta / 部分追加 (新/旧名称を想定)
+                if (t === 'response.function_call.delta' || t === 'response.function_call.arguments.delta' || t === 'response.tool_call.arguments.delta') {
+                    const id = realtimeEvent.item_id || realtimeEvent.tool_call_id || realtimeEvent.response_id;
+                    if (!buffers[id]) {
+                        buffers[id] = { name: realtimeEvent.name || realtimeEvent.function_name || 'unknown_function', argsText: '' };
+                        logMessage(`Function Call Requested: ${buffers[id].name}(`);
+                    }
+                    const delta = realtimeEvent.delta || realtimeEvent.arguments_delta || realtimeEvent.arguments || '';
+                    if (delta) {
+                        buffers[id].argsText += delta;
+                        logMessage(`..args delta: ${delta}`);
+                    }
+                }
+                // 完了 (completed / done)
+                if (t === 'response.function_call.completed' || t === 'response.tool_call.completed' || (t === 'response.output_item.done' && realtimeEvent.item && realtimeEvent.item.type === 'tool_call')) {
+                    const id = realtimeEvent.item?.id || realtimeEvent.item_id || realtimeEvent.tool_call_id || realtimeEvent.response_id;
+                    const buf = buffers[id];
+                    if (buf) {
+                        let prettyArgs = buf.argsText.trim();
+                        // JSON っぽければ整形
+                        try {
+                            if (prettyArgs.startsWith('{') || prettyArgs.startsWith('[')) {
+                                prettyArgs = JSON.stringify(JSON.parse(prettyArgs), null, 2);
+                            }
+                        } catch {}
+                        logMessage(`Function Call Completed: ${buf.name}(${prettyArgs})`);
+                        delete buffers[id];
+                    } else if (realtimeEvent.item && realtimeEvent.item.arguments) {
+                        // item 内に完成引数があるパターン
+                        let argsObj = realtimeEvent.item.arguments;
+                        let pretty = typeof argsObj === 'string' ? argsObj : JSON.stringify(argsObj, null, 2);
+                        logMessage(`Function Call Completed: ${(realtimeEvent.item.name)||'unknown_function'}(${pretty})`);
+                    }
+                }
+                // 失敗/エラー
+                if (t === 'response.function_call.error' || t === 'response.tool_call.error') {
+                    logMessage(`Function Call Error: ${(realtimeEvent.name)||''} ${realtimeEvent.error?.message || ''}`);
+                }
+                // ツール結果がモデルへ返却されたことを表す(将来拡張想定)
+                if (t === 'response.tool_result' || t === 'response.function_call.result') {
+                    logMessage(`Function Call Result Received by Model: ${JSON.stringify(realtimeEvent.result || realtimeEvent, null, 2)}`);
+                }
+                // ==== Function / Tool Call ログ ここまで ====
+
+                // ==== Function Call の実行と応答 ====
+                if (t === 'response.function_call_arguments.done') {
+                    const callId = realtimeEvent.call_id;
+                    const functionName = realtimeEvent.name;
+                    const args = realtimeEvent.arguments;
+
+                    logMessage(`Executing function: ${functionName} with args: ${args}`);
+
+                    // map_geocoding 関数の実行
+                    if (functionName === 'map_geocoding') {
+                        executeGeocoding(callId, args, dataChannel);
+                    }
+                }
+                // ==== Function Call の実行と応答 ここまで ====
+
+                if (realtimeEvent.type === "session.update") {
+                    const instructions = realtimeEvent.session.instructions;
+                    logMessage("Instructions: " + instructions);
+                } else if (realtimeEvent.type === "session.error") {
+                    logMessage("Error: " + realtimeEvent.error.message);
+                } else if (realtimeEvent.type === "session.end") {
+                    logMessage("Session ended.");
+                }
+            });
+
+            dataChannel.addEventListener('close', () => {
+                logMessage('Data channel is closed');
+            });
+
+	          // Start the session using the Session Description Protocol (SDP)
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+
+            const sdpResponse = await fetch(WEBRTC_URL, {
+                method: "POST",
+                body: offer.sdp,
+                headers: {
+                    Authorization: `Bearer ${ephemeralKey}`,
+                    "Content-Type": "application/sdp",
+                },
+            });
+
+            const answer = { type: "answer", sdp: await sdpResponse.text() };
+            await peerConnection.setRemoteDescription(answer);
+
+            // 既存のボタンをチェックして再利用
+            let closeButton = document.getElementById('closeSessionButton');
+            if (!closeButton) {
+                closeButton = document.createElement('button');
+                closeButton.id = 'closeSessionButton';
+                closeButton.innerText = 'Close Session';
+                document.body.appendChild(closeButton);
+            }
+            closeButton.onclick = stopSession;
+            document.body.appendChild(button);
+
+            // Send a client event to update the session
+            function updateSession(dataChannel) {
+                const event = {
+                    type: "session.update",
+                    session: {
+                        instructions: `## 指示
+- あなたは「AI ナビゲーション サービス」という名前の音声エージェントです。ドライバーが音声で、目的地の設定を依頼するので、そのリクエストに応えてください。
+- 最初にあなたから発話をして会話を開始してください。
+- 目的地が曖昧な場合は、必ず具体的な場所を指示するようにドライバーに尋ねてください。`,
+                        turn_detection: {
+                            type: "server_vad",
+                            threshold: 0.5,
+                            prefix_padding_ms: 300,
+                            silence_duration_ms: 500
+                        },
+                        tools: [
+                            {
+                                "type": "function",
+                                "name": "map_geocoding",
+                                "description": "目的地の住所や施設名を取得する",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "destination": {
+                                            "type": "string",
+                                            "description": "目的地の住所や施設名"
+                                        }
+                                    },
+                                    "required": ["destination"]
+                                }
+                            }
+                        ]
+                    }
+                };
+                dataChannel.send(JSON.stringify(event));
+                logMessage("Sent client event: " + JSON.stringify(event, null, 2));
+            }
+
+            function stopSession() {
+                if (dataChannel) dataChannel.close();
+                if (peerConnection) peerConnection.close();
+                peerConnection = null;
+                logMessage("Session closed.");
+                
+                // ボタンをenableに戻す
+                const startButton = document.getElementById('startSessionButton');
+                if (startButton) {
+                    startButton.disabled = false;
+                }
+            }
+
+        }
+
+        function logMessage(message) {
+            const logContainer = document.getElementById("logContainer");
+            const p = document.createElement("p");
+            p.textContent = message;
+            logContainer.appendChild(p);
+        }
+
+        // Nominatim ジオコーディング API を使用して住所から緯度経度を取得
+        async function geocodeAddress(address) {
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=1&accept-language=ja`;
+            
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'User-Agent': 'AzureOpenAIRealtimeSession/1.0'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.length > 0) {
+                    return {
+                        name: data[0].display_name,
+                        latitude: parseFloat(data[0].lat),
+                        longitude: parseFloat(data[0].lon)
+                    };
+                } else {
+                    return null;
+                }
+            } catch (error) {
+                logMessage(`Geocoding error: ${error.message}`);
+                return null;
+            }
+        }
+
+        // map_geocoding 関数の実行
+        async function executeGeocoding(callId, args, dataChannel) {
+            try {
+                const parsedArgs = JSON.parse(args);
+                const destination = parsedArgs.destination;
+
+                logMessage(`Geocoding: ${destination}`);
+
+                // Nominatim API を使用して実際の緯度経度を取得
+                const destinationInfo = await geocodeAddress(destination);
+
+                if (destinationInfo) {
+                    logMessage(`Geocoding result: ${destinationInfo.name}`);
+                    logMessage(`Coordinates: ${destinationInfo.latitude}, ${destinationInfo.longitude}`);
+
+                    // 地図にマーカーを追加
+                    if (map) {
+                        // 既存のマーカーをクリア
+                        map.eachLayer((layer) => {
+                            if (layer instanceof L.Marker) {
+                                map.removeLayer(layer);
+                            }
+                        });
+
+                        // 新しいマーカーを追加
+                        L.marker([destinationInfo.latitude, destinationInfo.longitude]).addTo(map)
+                            .bindPopup(destinationInfo.name)
+                            .openPopup();
+
+                        // 地図を目的地に移動
+                        map.setView([destinationInfo.latitude, destinationInfo.longitude], 15);
+                    }
+
+                    // 関数実行結果をモデルに送信
+                    const functionOutputEvent = {
+                        type: "conversation.item.create",
+                        item: {
+                            type: "function_call_output",
+                            call_id: callId,
+                            output: JSON.stringify(destinationInfo)
+                        }
+                    };
+                    dataChannel.send(JSON.stringify(functionOutputEvent));
+                    logMessage(`Function result sent: ${JSON.stringify(destinationInfo, null, 2)}`);
+                } else {
+                    // 目的地が見つからなかった場合
+                    logMessage(`Geocoding failed: No results found for "${destination}"`);
+                    
+                    const errorResult = {
+                        error: "目的地が見つかりませんでした",
+                        query: destination
+                    };
+                    
+                    const functionOutputEvent = {
+                        type: "conversation.item.create",
+                        item: {
+                            type: "function_call_output",
+                            call_id: callId,
+                            output: JSON.stringify(errorResult)
+                        }
+                    };
+                    dataChannel.send(JSON.stringify(functionOutputEvent));
+                }
+
+                // モデルに応答を生成させる
+                const responseCreateEvent = {
+                    type: "response.create"
+                };
+                dataChannel.send(JSON.stringify(responseCreateEvent));
+
+            } catch (error) {
+                logMessage(`Error executing function: ${error.message}`);
+            }
+        }
+    </script>
+</body>
+</html>

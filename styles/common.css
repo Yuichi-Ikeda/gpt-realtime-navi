@@ -1,0 +1,21 @@
+/* 共通スタイル */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+button {
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+button:active {
+    transform: translateY(0);
+}

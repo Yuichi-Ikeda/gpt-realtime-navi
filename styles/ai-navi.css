@@ -1,0 +1,61 @@
+/* AIナビゲーションページのスタイル */
+body {
+    background-color: #1a2f1a;
+    color: #ffffff;
+    padding: 0 20px;
+}
+
+h1 {
+    color: #ffffff;
+}
+
+button {
+    background-color: #cc5500;
+    color: #ffffff;
+    border: 1px solid #994400;
+    padding: 5px 10px;
+    margin-top: 5px;
+    font-size: 20px;
+    font-weight: bold;
+}
+
+button:hover {
+    background-color: #ff6600;
+}
+
+#myMap {
+    width: 100%;
+    height: calc(100vh - 140px);
+    margin: 20px 0;
+    border: 3px solid #000000;
+    border-radius: 5px;
+}
+
+#logContainer {
+    display: none;
+    background-color: #0f1f0f;
+    color: #ffffff;
+    padding: 10px;
+    margin-top: 20px;
+    border: 1px solid #333333;
+    border-radius: 5px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+#logContainer p {
+    margin: 5px 0;
+    padding: 5px;
+    border-bottom: 1px solid #333333;
+}
+
+.header-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.header-container h1 {
+    margin: 0;
+}

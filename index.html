@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ログイン</title>
+    <link rel="stylesheet" href="styles/common.css">
+    <link rel="stylesheet" href="styles/login.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h1>🔐 ログイン</h1>
+            <p>システムにアクセスするにはログインしてください</p>
+        </div>
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="username">ユーザー名</label>
+                <input type="text" id="username" name="username" required autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label for="password">パスワード</label>
+                <input type="password" id="password" name="password" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="login-button">ログイン</button>
+            <div id="errorMessage" class="error-message">
+                ユーザー名またはパスワードが正しくありません
+            </div>
+        </form>
+    </div>
+
+    <script>
+        const loginForm = document.getElementById('loginForm');
+        const errorMessage = document.getElementById('errorMessage');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const loginButton = loginForm.querySelector('button[type="submit"]');
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.add('show');
+        }
+
+        function setButtonState(isLoading) {
+            loginButton.disabled = isLoading;
+            loginButton.textContent = isLoading ? 'ログイン中...' : 'ログイン';
+        }
+
+        loginForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            errorMessage.classList.remove('show');
+            setButtonState(true);
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        username: usernameInput.value, 
+                        password: passwordInput.value 
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    localStorage.setItem('sessionToken', data.sessionToken);
+                    window.location.href = 'ai-navi.html';
+                } else {
+                    showError(data.message || 'ログインに失敗しました');
+                    passwordInput.value = '';
+                }
+            } catch (error) {
+                console.error('ログインエラー:', error);
+                showError('サーバーとの通信に失敗しました');
+            } finally {
+                setButtonState(false);
+            }
+        });
+    </script>
+</body>
+</html>

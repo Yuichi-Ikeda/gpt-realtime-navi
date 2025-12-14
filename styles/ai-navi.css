@@ -23,28 +23,41 @@ button:hover {
     background-color: #ff6600;
 }
 
-#myMap {
-    width: 100%;
-    height: calc(100vh - 140px);
-    margin: 20px 0;
-    border: 3px solid #000000;
-    border-radius: 5px;
+button:disabled {
+    background-color: #666666;
+    color: #cccccc;
+    border: 1px solid #555555;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+button:disabled:hover {
+    background-color: #666666;
+}
+
+#debugTraceCheckbox {
+    margin-left: 10px;
+    cursor: pointer;
+}
+
+label {
+    display: flex;
+    align-items: center;
+    color: #ffffff;
+    font-size: 14px;
 }
 
 #logContainer {
     display: none;
     background-color: #0f1f0f;
     color: #ffffff;
-    padding: 10px;
-    margin-top: 20px;
-    border: 1px solid #333333;
     border-radius: 5px;
     max-height: 400px;
     overflow-y: auto;
 }
 
 #logContainer p {
-    margin: 5px 0;
+    margin: 5px;
     padding: 5px;
     border-bottom: 1px solid #333333;
 }
@@ -56,6 +69,10 @@ button:hover {
     margin-top: 10px;
 }
 
-.header-container h1 {
-    margin: 0;
+#myMap {
+    width: 100%;
+    height: calc(100vh - 140px);
+    margin: 20px 0;
+    border: 3px solid #000000;
+    border-radius: 5px;
 }

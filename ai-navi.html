@@ -19,6 +19,24 @@
     <div class="header-container">
         <h1>音声ナビゲーション</h1>
         <button id="startSessionButton" onclick="StartSession()">AI オペレーターとの通話</button>
+        <button id="closeSessionButton" disabled>通話の終了</button>
+        <div style="margin-left: 20px; display: flex; gap: 10px; align-items: center;">
+            <label>音声モデル
+                <select id="modelSelector" style="margin-left: 5px;">
+                    <option value="alloy">alloy</option>
+                    <option value="ash">ash</option>
+                    <option value="ballad">ballad</option>
+                    <option value="coral">coral</option>
+                    <option value="echo">echo</option>
+                    <option value="sage">sage</option>
+                    <option value="shimmer">shimmer</option>
+                    <option value="verse">verse</option>
+                </select>
+            </label>
+            <label>
+                <input type="checkbox" id="debugTraceCheckbox" style="margin-right: 5px;">デバッグトレース
+            </label>
+        </div>
     </div>
     
     <div id="myMap"></div>
@@ -32,6 +50,21 @@
         
         // ページ読み込み時にマップを初期化
         window.onload = function() {
+            // セッション終了ボタンを最初は無効化
+            const closeBtnInitial = document.getElementById('closeSessionButton');
+            if (closeBtnInitial) closeBtnInitial.disabled = true;
+
+            // デバッグトレースチェックボックスのイベントリスナーを設定
+            const debugCheckbox = document.getElementById('debugTraceCheckbox');
+            const logContainer = document.getElementById('logContainer');
+            if (debugCheckbox) {
+                debugCheckbox.addEventListener('change', function() {
+                    if (logContainer) {
+                        logContainer.style.display = this.checked ? 'block' : 'none';
+                    }
+                });
+            }
+
             // セッショントークンの確認
             const sessionToken = localStorage.getItem('sessionToken');
             if (!sessionToken) {
@@ -69,12 +102,12 @@
 
         async function StartSession() {
             try {
-                // ボタンをdisableにして二重押しを防止
-                const startButton = document.getElementById('startSessionButton');
-                if (startButton) {
-                    startButton.disabled = true;
-                }
-                
+                // ボタンの状態を更新
+                const startBtn = document.getElementById('startSessionButton');
+                if (startBtn) startBtn.disabled = true;
+                const closeBtn = document.getElementById('closeSessionButton');
+                if (closeBtn) closeBtn.disabled = false;
+
                 // セッショントークンを取得
                 const sessionToken = localStorage.getItem('sessionToken');
                 if (!sessionToken) {
@@ -88,7 +121,8 @@
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
-                        "X-Session-Token": sessionToken
+                        "X-Session-Token": sessionToken,
+                        "Voice-Model": document.getElementById('modelSelector').value
                     }
                 });
 
@@ -286,16 +320,12 @@
             const answer = { type: "answer", sdp: await sdpResponse.text() };
             await peerConnection.setRemoteDescription(answer);
 
-            // 既存のボタンをチェックして再利用
-            let closeButton = document.getElementById('closeSessionButton');
-            if (!closeButton) {
-                closeButton = document.createElement('button');
-                closeButton.id = 'closeSessionButton';
-                closeButton.innerText = 'Close Session';
-                document.body.appendChild(closeButton);
+            // セッション終了ボタンの有効化
+            const closeBtnEl = document.getElementById('closeSessionButton');
+            if (closeBtnEl) {
+                closeBtnEl.disabled = false;
+                closeBtnEl.onclick = stopSession;
             }
-            closeButton.onclick = stopSession;
-            document.body.appendChild(button);
 
             // Send a client event to update the session
             function updateSession(dataChannel) {
@@ -332,7 +362,7 @@
                     }
                 };
                 dataChannel.send(JSON.stringify(event));
-                logMessage("Sent client event: " + JSON.stringify(event, null, 2));
+                // logMessage("Sent client event: " + JSON.stringify(event, null, 2));
             }
 
             function stopSession() {
@@ -340,12 +370,18 @@
                 if (peerConnection) peerConnection.close();
                 peerConnection = null;
                 logMessage("Session closed.");
-                
+      
                 // ボタンをenableに戻す
                 const startButton = document.getElementById('startSessionButton');
                 if (startButton) {
                     startButton.disabled = false;
                 }
+                
+                // closeButtonをdisableに設定
+                const closeBtnDisable = document.getElementById('closeSessionButton');
+                if (closeBtnDisable) closeBtnDisable.disabled = true;
+                const startBtnEnable = document.getElementById('startSessionButton');
+                if (startBtnEnable) startBtnEnable.disabled = false;
             }
 
         }

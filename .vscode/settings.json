@@ -1,0 +1,4 @@
+{
+    "appService.defaultWebAppToDeploy": "/subscriptions/9c53b2f0-860f-4c8d-a3a4-818e1b3fadaa/resourceGroups/gpt-realtime-navi-group/providers/Microsoft.Web/sites/gpt-realtime-navi",
+    "appService.deploySubpath": "."
+}

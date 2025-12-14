@@ -80,7 +80,6 @@ app.post('/api/get-token', validateSession, async (req, res) => {
         const SESSIONS_URL = process.env.AZURE_OPENAI_SESSIONS_URL;
         const API_KEY = process.env.AZURE_OPENAI_API_KEY;
         const DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-realtime';
-        const VOICE = process.env.AZURE_OPENAI_VOICE || 'verse';
 
         // 環境変数のチェック
         if (!SESSIONS_URL || !API_KEY) {
@@ -89,6 +88,9 @@ app.post('/api/get-token', validateSession, async (req, res) => {
             });
         }
 
+        // VOICE via the "Voice-Model" header
+        let VOICE = (req.headers['voice-model'] || '').toString();
+        
         // Azure OpenAI Realtime API にセッション作成リクエストを送信
         const response = await fetch(SESSIONS_URL, {
             method: "POST",
